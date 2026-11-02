@@ -1,0 +1,37 @@
+name: Test Morphe 2 settings compatibility
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/morphe2-settings-abi-compat
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Compile and test Spicetify patch bundle
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: ./gradlew :extensions:extension:testDebugUnitTest :patches:test buildAndroid --no-daemon
+
+      - name: Upload experimental Morphe bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: spicetify-morphe2-experimental
+          path: patches/build/libs/patches-*.mpp
+          if-no-files-found: error
