@@ -1,0 +1,68 @@
+name: Publish experimental Morphe bundle
+
+on:
+  push:
+    branches:
+      - fix/morphe2-settings-abi-compat
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: read
+
+concurrency:
+  group: publish-morphe2-settings-abi-test
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/fix/morphe2-settings-abi-compat'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout test branch
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build experimental Morphe bundle
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: ./gradlew :patches:test buildAndroid --no-daemon
+
+      - name: Check Android patch bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          bundles=(patches/build/libs/patches-*.mpp)
+          if [ "${#bundles[@]}" -ne 1 ]; then
+            echo "Expected exactly one .mpp bundle, got ${#bundles[@]}" >&2
+            exit 1
+          fi
+          unzip -t "${bundles[0]}" > /dev/null
+          unzip -Z1 "${bundles[0]}" | grep -qx 'classes.dex'
+
+      - name: Publish experimental prerelease asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          bundles=(patches/build/libs/patches-*.mpp)
+          tag="morphe2-settings-abi-test"
+          asset="patches-1.2.0.mpp"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            gh release upload "$tag" "${bundles[0]}#$asset" --clobber
+          else
+            gh release create "$tag" "${bundles[0]}#$asset" \
+              --target "$GITHUB_SHA" \
+              --title "Spicetify Android 1.2.0 — Morphe 2.x settings ABI test" \
+              --notes "Experimental fork-only patch bundle for Spotify 9.1.80.2221 (ARM64). This relaxes the whole-class settings ABI digest guard while preserving required-class and hook-location checks. On-device validation is still required. Do not treat this as a stable release." \
+              --prerelease
+          fi
